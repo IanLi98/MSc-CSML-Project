@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Aug 31 10:11:27 2021
+
+@author: lixingchen
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.svm import LinearSVC
+from sklearn.linear_model import Ridge, ElasticNet, Lasso
+
+# ridge regression
+def ridge_regression(X, y, reg_param):
+    model = Ridge(alpha=reg_param, fit_intercept=False)
+    model.fit(X, y)
+    return model.coef_
+
+# lasso
+def lasso(X, y, reg_param):
+    model = Lasso(alpha=reg_param, fit_intercept=False)
+    model.fit(X, y)
+    return model.coef_
+
+# elastic net
+def elastic_net(X, y, reg_param, l1_param):
+    model = ElasticNet(alpha=reg_param, l1_ratio=l1_param, fit_intercept=False)
+    model.fit(X, y)
+
+# exclusive group Lasso with re-weighted scheme
+class ReWeightedEGL():
+    
+    def __init__(self, reg_param, n_group, thr, n_iter, idx_group_mat, idx_group_list, feat_dict):
+        self.reg_param = reg_param
+        self.idx_group_mat = idx_group_mat  
+        # matrix, size: n_group*n_feature, where entries are 1 (group contains the feature) 
+        # or 0 (group does not contain the feature)
+        self.idx_group_list = idx_group_list  
+        # list of list. length: n_group, where entry i is the list of features in group i.
+        self.feat_dict = feat_dict  
+        # dictionary. key: feature, value: group containing the feature
+        self.n_group = n_group
+        self.thr = thr
+        self.n_iter = n_iter
+        self.coef = None
+        self.idx = None
+        #self.converged = False
+
+    def _compute_Finv(self, w):
+        
+        n_group = self.idx_group_mat.shape[0]
+        n_feature = self.idx_group_mat.shape[1]
+        # initialization of ||w||_{1}
+        w_group_norm = np.empty(n_group)
+        for i in range(n_group): 
+            w_group = w[self.idx_group_list[i]]
+            w_group_norm[i] = np.linalg.norm(w_group, ord=1)
+        w_group_norm[np.where(w_group_norm==0)[0]] = 10**-9 #in case the denominator is zero
+        w_abs = np.abs(w)
+        F_inv_diag = np.zeros(n_feature)
+        for j in range(n_feature):
+            F_inv_diag[j] = w_abs[j] / w_group_norm[self.feat_dict[j]]
+        G_diag = np.sqrt(F_inv_diag)
+        
+        return G_diag  # (F_{jj})^{-\frac{1}{2}}    
+
+    def _compute_X_tran(self, X, G_diag): # compute X'
+        
+        return X.dot(np.diag(G_diag)) # X'=X(F)^{-\frac{1}{2}}
+    
+    def _compute_w_tran(self, X_tran, y): # compute w'
+        
+        if len(np.unique(y)) == 2:
+            clf = LinearSVC(C=self.reg_param, fit_intercept=False)
+            clf.fit(X_tran, y)
+            w = clf.coef_
+        else:
+            clf = Ridge(alpha=self.reg_param, fit_intercept=False)
+            clf.fit(X_tran, y)
+            w = clf.coef_
+        
+        return w
+
+    def _create_rand_group(self, n_feature): # generate random group allocation
+        
+        self.idx_group_mat = np.zeros((self.n_group, n_feature))
+        idx = np.random.permutation(n_feature)
+        idx = np.array_split(idx, self.n_group)
+        for i, j in enumerate(idx):
+            self.idx_group_mat[i, j] = 1    
+    
+    def _ell12_norm(self, X, y):
+        
+        n_sample, n_feature = X.shape
+
+        if self.idx_group_mat is None and self.idx_group_list is None and self.feat_dict is None:
+            self._create_rand_group(n_feature)
+
+        if self.feat_dict is None:
+            if self.idx_group_list is None:
+                self.idx_group_list = []
+                n_group = self.idx_group_mat.shape[0]
+            else:
+                n_group = len(self.idx_group_list)
+            feat_dict = {}
+            for i in range(n_group):
+                if not self.idx_group_list:
+                    temp = np.nonzero(self.idx_group_mat[i, :])[0]
+                    self.idx_group_list.append(temp)
+                else:
+                    temp = self.idx_group_list[i]
+                for j in temp:
+                    feat_dict[j] = i
+            self.feat_dict = feat_dict
+
+        w = np.ones(n_feature) / n_feature #initlization of uniform w
+
+        G_diag = self._compute_Finv(w)
+        X_tran = self._compute_X_tran(X, G_diag)
+        w_tran = self._compute_w_tran(X_tran, y)
+
+        t = 0 # iteration counter
+        while True:
+            t += 1
+            w_pre = w.copy()
+            w = w_tran*G_diag
+
+            G_diag = self._compute_G(w)
+            X_tran = self._compute_X_tran(X, G_diag)
+            w_tran = self._compute_w_tran(X_tran, y)
+
+            tol = np.linalg.norm(w_pre-w)
+
+            if tol <= self.thr or t >= self.n_iter:
+                break
+
+        self.coef = w
+        self.idx = np.where(np.abs(w)>10**-3)[0]
+
+        if t < self.n_iter:
+            print('Converged!')
+
+    def fit(self, X, y):
+        self._ell12_norm(X, y)
+ 
+    
+
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
