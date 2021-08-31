@@ -8,7 +8,7 @@ Created on Tue Aug 31 10:11:27 2021
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.svm import LinearSVC
+from sklearn.svm import SVC, LinearSVC
 from sklearn.linear_model import Ridge, ElasticNet, Lasso
 
 # ridge regression
