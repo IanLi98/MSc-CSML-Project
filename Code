@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Aug 31 10:11:27 2021
+Created on Tue Aug 15 10:11:27 2021
 
 @author: 20063972
 """
@@ -16,20 +16,27 @@ from sklearn.linear_model import Ridge, ElasticNet, Lasso
 
 # ridge regression
 def ridge_regression(X, y, reg_param):
-    model = Ridge(alpha=reg_param, fit_intercept=False)
+    
+    model = Ridge(alpha=reg_param, fit_intercept=False)   
     model.fit(X, y)
+    
     return model.coef_
 
 # lasso
 def lasso(X, y, reg_param):
+    
     model = Lasso(alpha=reg_param, fit_intercept=False)
     model.fit(X, y)
+    
     return model.coef_
 
 # elastic net
 def elastic_net(X, y, reg_param, l1_param):
+    
     model = ElasticNet(alpha=reg_param, l1_ratio=l1_param, fit_intercept=False)
     model.fit(X, y)
+
+    return model.coef_
 
 # exclusive group Lasso with re-weighted scheme
 class ReWeightedEGL():
