@@ -3,7 +3,7 @@
 """
 Created on Tue Aug 31 10:11:27 2021
 
-@author: Ian_20063972
+@author: 20063972
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -147,6 +147,108 @@ class ReWeightedEGL():
     def fit(self, X, y):
         self._ell12_norm(X, y)
  
+class stab_select():
+    def __init__(self, param_range=np.linspace(0.01, 1, 100), alpha=0.5, sample_size=None, p_threshold=0.5, n_iter=100,
+                 reg_type='lasso', verbose=0, idx_group=None, n_group=50, group_type='fixed'):
+        self.param_range = param_range
+        self.alpha = alpha
+        self.sample_size = sample_size
+        self.p_threshold = p_threshold
+        self.n_iter = n_iter
+        self.reg_type = reg_type
+        self.verbose = verbose
+        self.idx_group = idx_group
+        self.n_group = n_group
+        self.group_type = 'fixed'
+
+    def _compute_w(self, X, y):
+        return fitLasso(X, y, param_range=self.param_range, alpha=self.alpha, reg_type=self.reg_type,
+                        idx_group=self.idx_group, n_group=self.n_group, group_type=self.group_type)
+
+    def _select_feature(self, w_vec):
+        # w_vec_new = np.zeros(w_vec.shape)
+        # w_vec_new[np.where(abs(w_vec) >= 10**-3)] = 1.
+
+        w_vec_new = sp.lil_matrix(w_vec.shape)
+        w_vec_new[np.where(abs(w_vec) >= 10 ** -3)] = 1.
+
+        return sp.csr_matrix(w_vec_new)
+
+    def _get_weights(self, w_vec):
+        idx = np.where(abs(w_vec) >= 10 ** -3)
+        w = w_vec[idx]
+
+        return w, idx[0]
+
+    def _fit(self, X, y):
+        n_sample, n_feature = X.shape
+        if self.sample_size is None:
+            self.sample_size = int(n_sample / 2)
+
+        # w_counter = np.zeros((n_feature, len(self.param_range)))
+        w_counter = sp.csr_matrix((n_feature, len(self.param_range)))
+        w_vals = []
+        idx_vals = []
+        convergence = []
+        for counter in range(self.n_iter):
+
+            if self.verbose == 1:
+                print('iteration: %d/%d.' % (counter, self.n_iter))
+
+            # subsample samples
+            idx_rand = np.random.permutation(n_sample)
+            sub_idx = idx_rand[:self.sample_size]
+
+            X_sub = X[sub_idx, :]
+            y_sub = y[sub_idx]
+
+            # fit subsamples to get coefficients
+            w_vec, converged = self._compute_w(X_sub, y_sub)
+            if converged:
+                w_counter += self._select_feature(w_vec)
+
+            w_temp, idx_temp = self._get_weights(w_vec)
+            # w_vals.append(w_temp)
+            w_vals.append(w_vec)
+            idx_vals.append(idx_temp)
+            convergence.append(converged)
+
+            # [added/modified] repeat for the other half subsamples
+            if self.sample_size <= int(n_sample / 2):
+                sub_idx = idx_rand[self.sample_size:]
+
+                X_sub = X[sub_idx, :]
+                y_sub = y[sub_idx]
+
+                # fit subsamples to get coefficients
+                w_vec, converged = self._compute_w(X_sub, y_sub)
+                if converged:
+                    w_counter += self._select_feature(w_vec)
+
+                w_temp, idx_temp = self._get_weights(w_vec)
+                # w_vals.append(w_temp)
+                w_vals.append(w_vec)
+                idx_vals.append(idx_temp)
+                convergence.append(converged)
+
+        # select features with selection probabilities larger than p_threshold, under all lambdas
+        select_prob = w_counter / float(len(np.where(convergence)[0]))
+        max_select_prob = np.max(select_prob, axis=1).toarray()
+        idx = np.where(max_select_prob >= self.p_threshold)[0]
+
+        self.idx = idx
+        self.w_count = w_counter
+        self.select_prob = select_prob
+        self.max_prob = max_select_prob
+        self.weights_total = w_vals
+        self.idx_total = idx_vals
+        self.convergence = convergence
+
+    def fit(self, X, y):
+        self._fit(X, y)
+
+    def predict(self, X):
+        return np.ravel(np.dot(X[:, self.idx], self.coef))
 
 # import data
 # URL of data: https://web.stanford.edu/~hastie/CASI_files/DATA/diabetes.html
